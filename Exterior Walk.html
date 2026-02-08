@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Perspective Image Warper</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            font-family: system-ui, -apple-system, sans-serif;
+            overflow: hidden;
+        }
+        #workspace {
+            position: relative;
+            width: 100vw;
+            height: calc(100vh - 180px);
+            overflow: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-image: 
+                linear-gradient(45deg, #1e293b 25%, transparent 25%),
+                linear-gradient(-45deg, #1e293b 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #1e293b 75%),
+                linear-gradient(-45deg, transparent 75%, #1e293b 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+        #canvas-container {
+            position: relative;
+            box-shadow: 0 0 50px rgba(0,0,0,0.5);
+            background: transparent;
+        }
+        .handle {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            border: 3px solid white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            cursor: move;
+            z-index: 50;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+            touch-action: none;
+            background: #3b82f6;
+        }
+        
+        .handle:hover {
+            scale: 1.25;
+            filter: brightness(1.1);
+        }
+        /* Color code corners for easier orientation */
+        #h-skew-0 { background: #ef4444; } /* TL - Red */
+        #h-skew-1 { background: #3b82f6; } /* TR - Blue */
+        #h-skew-2 { background: #22c55e; } /* BR - Green */
+        #h-skew-3 { background: #eab308; } /* BL - Yellow */
+
+        canvas {
+            display: block;
+        }
+        .ui-panel {
+            background: rgba(15, 23, 42, 0.9);
+            backdrop-filter: blur(10px);
+            z-index: 100;
+        }
+    </style>
+</head>
+<body class="h-screen flex flex-col">
+
+    <!-- Header Panel -->
+    <div class="ui-panel p-4 border-b border-slate-700 shadow-xl">
+        <div class="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-white leading-tight">Perspective Rectifier</h1>
+                <p class="text-slate-400 text-sm">Select corners of the object, then apply skew to straighten it.</p>
+            </div>
+
+            <div class="flex items-center gap-4">
+                <button id="applySkewBtn" class="bg-blue-600 hover:bg-blue-500 text-white px-8 py-2 rounded-lg font-bold transition-all active:scale-95 text-sm shadow-lg shadow-blue-900/30">
+                    Apply Skew
+                </button>
+            </div>
+            
+            <div class="flex items-center gap-3">
+                <label class="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg font-medium cursor-pointer transition-all active:scale-95 text-sm">
+                    Upload
+                    <input type="file" id="fileInput" accept="image/*" class="hidden">
+                </label>
+                <button id="resetBtn" class="text-slate-400 hover:text-white px-2 py-2 text-sm transition-colors">
+                    Reset Original
+                </button>
+                <button id="downloadBtn" class="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded-lg font-medium transition-all active:scale-95 text-sm shadow-lg shadow-emerald-900/20">
+                    Download
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Workspace -->
+    <div id="workspace">
+        <div id="empty-state" class="text-center p-10 max-w-md">
+            <div class="w-20 h-20 bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-700">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+            </div>
+            <h2 class="text-xl font-bold mb-2">No Image</h2>
+            <p class="text-slate-400">Paste (Ctrl+V) or Upload an image to start rectifying.</p>
+        </div>
+
+        <div id="canvas-container" class="hidden">
+            <canvas id="mainCanvas"></canvas>
+            
+            <!-- Selection Handles -->
+            <div id="h-skew-0" class="handle" data-index="0" title="Top Left"></div>
+            <div id="h-skew-1" class="handle" data-index="1" title="Top Right"></div>
+            <div id="h-skew-2" class="handle" data-index="2" title="Bottom Right"></div>
+            <div id="h-skew-3" class="handle" data-index="3" title="Bottom Left"></div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * Matrix Math for Homography
+         */
+        function solve(A, b) {
+            const n = b.length;
+            for (let i = 0; i < n; i++) {
+                let max = i;
+                for (let j = i + 1; j < n; j++) if (Math.abs(A[j][i]) > Math.abs(A[max][i])) max = j;
+                [A[i], A[max]] = [A[max], A[i]];
+                [b[i], b[max]] = [b[max], b[i]];
+                for (let j = i + 1; j < n; j++) {
+                    const f = A[j][i] / A[i][i];
+                    b[j] -= f * b[i];
+                    for (let k = i; k < n; k++) A[j][k] -= f * A[i][k];
+                }
+            }
+            const x = new Array(n);
+            for (let i = n - 1; i >= 0; i--) {
+                let sum = 0;
+                for (let j = i + 1; j < n; j++) sum += A[i][j] * x[j];
+                x[i] = (b[i] - sum) / A[i][i];
+            }
+            return x;
+        }
+
+        function getHomography(src, dst) {
+            const mat = [];
+            for (let i = 0; i < 4; i++) {
+                mat.push([src[i].x, src[i].y, 1, 0, 0, 0, -src[i].x * dst[i].x, -src[i].y * dst[i].x]);
+                mat.push([0, 0, 0, src[i].x, src[i].y, 1, -src[i].x * dst[i].y, -src[i].y * dst[i].y]);
+            }
+            const b = [];
+            for (let i = 0; i < 4; i++) {
+                b.push(dst[i].x);
+                b.push(dst[i].y);
+            }
+            const h = solve(mat, b);
+            return [h[0], h[3], h[6], h[1], h[4], h[7], h[2], h[5], 1];
+        }
+
+        /**
+         * WebGL Engine for Clean Warping
+         */
+        class WebGLWarp {
+            constructor() {
+                this.canvas = document.createElement('canvas');
+                this.gl = this.canvas.getContext('webgl', { preserveDrawingBuffer: true, antialias: true });
+                this.program = this.initShaders();
+                this.texture = null;
+            }
+
+            initShaders() {
+                // FIXED: Vertex shader now flips Y coordinate to match standard DOM/Canvas coordinates
+                // Standard GL: (-1,-1) is bottom-left. Canvas: (0,0) is top-left.
+                // We map 0->1 (top) and H->-1 (bottom) for Y.
+                const vs = `
+                    attribute vec2 a_position;
+                    uniform vec2 u_resolution;
+                    varying vec2 v_pos;
+                    void main() {
+                        vec2 zeroToOne = a_position / u_resolution;
+                        // Flip Y axis: (1.0 - zeroToOne.y)
+                        gl_Position = vec4(zeroToOne.x * 2.0 - 1.0, (1.0 - zeroToOne.y) * 2.0 - 1.0, 0, 1);
+                        v_pos = a_position;
+                    }
+                `;
+                const fs = `
+                    precision mediump float;
+                    uniform sampler2D u_image;
+                    uniform mat3 u_invHomography;
+                    uniform vec2 u_imgRes;
+                    varying vec2 v_pos;
+                    void main() {
+                        vec3 uvw = u_invHomography * vec3(v_pos, 1.0);
+                        vec2 uv = uvw.xy / uvw.z;
+                        if (uv.x < 0.0 || uv.x > u_imgRes.x || uv.y < 0.0 || uv.y > u_imgRes.y) {
+                            discard; // Make outside pixels transparent
+                        }
+                        gl_FragColor = texture2D(u_image, uv / u_imgRes);
+                    }
+                `;
+                const gl = this.gl;
+                const vShader = gl.createShader(gl.VERTEX_SHADER);
+                gl.shaderSource(vShader, vs);
+                gl.compileShader(vShader);
+                const fShader = gl.createShader(gl.FRAGMENT_SHADER);
+                gl.shaderSource(fShader, fs);
+                gl.compileShader(fShader);
+                const program = gl.createProgram();
+                gl.attachShader(program, vShader);
+                gl.attachShader(program, fShader);
+                gl.linkProgram(program);
+                return program;
+            }
+
+            setTexture(image) {
+                const gl = this.gl;
+                if (this.texture) gl.deleteTexture(this.texture);
+                this.texture = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, this.texture);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+            }
+
+            render(targetW, targetH, srcPts, imgW, imgH) {
+                const gl = this.gl;
+                this.canvas.width = targetW;
+                this.canvas.height = targetH;
+                gl.viewport(0, 0, targetW, targetH);
+                gl.clearColor(0,0,0,0);
+                gl.clear(gl.COLOR_BUFFER_BIT);
+
+                gl.useProgram(this.program);
+                
+                // Destination points (Where we want the source points to end up)
+                const dstPts = [
+                    {x: 0, y: 0},               // Top Left
+                    {x: targetW, y: 0},         // Top Right
+                    {x: targetW, y: targetH},   // Bottom Right
+                    {x: 0, y: targetH}          // Bottom Left
+                ];
+                
+                // Calculate homography from Destination -> Source (Inverse mapping for fragment shader)
+                const invHMat = getHomography(dstPts, srcPts);
+
+                gl.uniform2f(gl.getUniformLocation(this.program, "u_resolution"), targetW, targetH);
+                gl.uniform2f(gl.getUniformLocation(this.program, "u_imgRes"), imgW, imgH);
+                gl.uniformMatrix3fv(gl.getUniformLocation(this.program, "u_invHomography"), false, invHMat);
+
+                const posLoc = gl.getAttribLocation(this.program, "a_position");
+                const posBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
+                
+                // Draw a rectangle covering the entire target canvas
+                // The Vertex shader maps these to Clip Space
+                const positions = new Float32Array([
+                    0, 0, 
+                    targetW, 0, 
+                    targetW, targetH, 
+                    0, 0, 
+                    targetW, targetH, 
+                    0, targetH
+                ]);
+                
+                gl.bindBuffer(gl.ARRAY_BUFFER, posBuffer);
+                gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+                gl.enableVertexAttribArray(posLoc);
+                gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+                gl.drawArrays(gl.TRIANGLES, 0, 6);
+                return this.canvas;
+            }
+        }
+
+        const canvas = document.getElementById('mainCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvas-container');
+        const workspace = document.getElementById('workspace');
+        const emptyState = document.getElementById('empty-state');
+        const fileInput = document.getElementById('fileInput');
+        const resetBtn = document.getElementById('resetBtn');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const applySkewBtn = document.getElementById('applySkewBtn');
+        
+        const handles = [
+            document.getElementById('h-skew-0'),
+            document.getElementById('h-skew-1'),
+            document.getElementById('h-skew-2'),
+            document.getElementById('h-skew-3')
+        ];
+
+        let originalImg = new Image();
+        let currentImg = new Image();
+        let pts = []; 
+        let draggingIndex = -1;
+        let isImageLoaded = false;
+        
+        const warper = new WebGLWarp();
+
+        function initImage(src) {
+            originalImg = new Image();
+            originalImg.onload = () => {
+                currentImg = originalImg;
+                isImageLoaded = true;
+                emptyState.classList.add('hidden');
+                container.classList.remove('hidden');
+                
+                setupWorkspace();
+                resetSelection();
+                render();
+            };
+            originalImg.src = src;
+        }
+
+        function setupWorkspace() {
+            canvas.width = currentImg.width;
+            canvas.height = currentImg.height;
+            workspace.scrollLeft = (canvas.width - workspace.clientWidth) / 2;
+            workspace.scrollTop = (canvas.height - workspace.clientHeight) / 2;
+        }
+
+        function resetSelection() {
+            const w = canvas.width;
+            const h = canvas.height;
+            const inset = 50;
+            // Initialize points in Clockwise order starting Top-Left
+            pts = [
+                { x: inset, y: inset },         // 0: TL
+                { x: w - inset, y: inset },     // 1: TR
+                { x: w - inset, y: h - inset }, // 2: BR
+                { x: inset, y: h - inset }      // 3: BL
+            ];
+            updateHandlePositions();
+        }
+
+        function updateHandlePositions() {
+            pts.forEach((pt, i) => {
+                handles[i].style.left = pt.x + 'px';
+                handles[i].style.top = pt.y + 'px';
+            });
+        }
+
+        function render() {
+            if (!isImageLoaded) return;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(currentImg, 0, 0);
+
+            // Selection Outline
+            ctx.beginPath();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#3b82f6';
+            ctx.moveTo(pts[0].x, pts[0].y);
+            ctx.lineTo(pts[1].x, pts[1].y);
+            ctx.lineTo(pts[2].x, pts[2].y);
+            ctx.lineTo(pts[3].x, pts[3].y);
+            ctx.closePath();
+            ctx.stroke();
+            
+            ctx.fillStyle = 'rgba(59, 130, 246, 0.15)';
+            ctx.fill();
+            
+            // Draw connecting lines for better visibility of orientation
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.setLineDash([5, 5]);
+            ctx.moveTo(pts[0].x, pts[0].y); // TL
+            ctx.lineTo(pts[2].x, pts[2].y); // BR
+            ctx.moveTo(pts[1].x, pts[1].y); // TR
+            ctx.lineTo(pts[3].x, pts[3].y); // BL
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        applySkewBtn.addEventListener('click', () => {
+            if (!isImageLoaded) return;
+
+            const dist = (p1, p2) => Math.sqrt((p1.x - p2.x)**2 + (p1.y - p2.y)**2);
+            const w1 = dist(pts[0], pts[1]);
+            const w2 = dist(pts[3], pts[2]);
+            const h1 = dist(pts[3], pts[0]);
+            const h2 = dist(pts[2], pts[1]);
+            
+            const targetW = Math.round(Math.max(w1, w2));
+            const targetH = Math.round(Math.max(h1, h2));
+
+            warper.setTexture(currentImg);
+            const resultCanvas = warper.render(targetW, targetH, pts, currentImg.width, currentImg.height);
+            
+            const newImg = new Image();
+            newImg.onload = () => {
+                currentImg = newImg;
+                setupWorkspace();
+                resetSelection();
+                render();
+            };
+            newImg.src = resultCanvas.toDataURL();
+        });
+
+        function handleStart(e) {
+            if (e.target.classList.contains('handle')) {
+                draggingIndex = parseInt(e.target.dataset.index);
+                e.preventDefault();
+            }
+        }
+
+        function handleMove(e) {
+            if (draggingIndex === -1) return;
+
+            const rect = container.getBoundingClientRect();
+            let clientX, clientY;
+
+            if (e.touches) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
+            }
+
+            pts[draggingIndex] = { 
+                x: clientX - rect.left, 
+                y: clientY - rect.top 
+            };
+
+            updateHandlePositions();
+            render();
+        }
+
+        function handleEnd() { draggingIndex = -1; }
+
+        window.addEventListener('mousedown', handleStart);
+        window.addEventListener('mousemove', handleMove);
+        window.addEventListener('mouseup', handleEnd);
+        window.addEventListener('touchstart', handleStart, { passive: false });
+        window.addEventListener('touchmove', handleMove, { passive: false });
+        window.addEventListener('touchend', handleEnd);
+
+        window.addEventListener('paste', (e) => {
+            const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+            for (let item of items) {
+                if (item.kind === 'file' && item.type.startsWith('image/')) {
+                    const blob = item.getAsFile();
+                    const reader = new FileReader();
+                    reader.onload = (event) => initImage(event.target.result);
+                    reader.readAsDataURL(blob);
+                }
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (event) => initImage(event.target.result);
+                reader.readAsDataURL(file);
+            }
+        });
+
+        resetBtn.addEventListener('click', () => {
+            if (isImageLoaded) {
+                currentImg = originalImg;
+                setupWorkspace();
+                resetSelection();
+                render();
+            }
+        });
+
+        downloadBtn.addEventListener('click', () => {
+            if (!isImageLoaded) return;
+            const link = document.createElement('a');
+            link.download = 'rectified-image.png';
+            link.href = canvas.toDataURL();
+            link.click();
+        });
+
+    </script>
+</body>
+</html>
