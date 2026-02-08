@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lot Grid Editor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        .grid-overlay {
+            display: grid;
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+        }
+
+        .grid-cell {
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            background-color: rgba(0, 0, 0, 0.05);
+            pointer-events: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            overflow: hidden;
+            font-size: 0.75rem;
+            color: white;
+            font-weight: bold;
+            text-shadow: 0 1px 2px black;
+            user-select: none;
+        }
+
+        .grid-cell:hover {
+            background-color: rgba(59, 130, 246, 0.3);
+            border-color: rgba(59, 130, 246, 0.8);
+        }
+
+        .grid-cell.selected {
+            background-color: rgba(34, 197, 94, 0.4);
+            border: 2px solid #22c55e;
+            z-index: 10;
+        }
+
+        .grid-cell.has-label {
+            background-color: rgba(234, 179, 8, 0.3);
+            border-color: rgba(234, 179, 8, 0.8);
+        }
+
+        img { -webkit-user-drag: none; user-select: none; }
+
+        /* Rulers and Handles */
+        .ruler-handle {
+            position: absolute;
+            background-color: #3b82f6;
+            z-index: 30;
+            touch-action: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s;
+        }
+        
+        .ruler-handle:hover, .ruler-handle.active {
+            background-color: #2563eb;
+            z-index: 40;
+        }
+
+        /* Top Ruler (Columns) */
+        .col-handle {
+            top: 0;
+            bottom: 0;
+            width: 6px; /* Hit area */
+            margin-left: -3px; /* Center on line */
+            cursor: col-resize;
+        }
+        .col-handle::after {
+            content: '';
+            width: 2px;
+            height: 100%;
+            background-color: white; /* Visual line */
+            box-shadow: 0 0 2px rgba(0,0,0,0.3);
+        }
+
+        /* Left Ruler (Rows) */
+        .row-handle {
+            left: 0;
+            right: 0;
+            height: 6px; /* Hit area */
+            margin-top: -3px; /* Center on line */
+            cursor: row-resize;
+        }
+        .row-handle::after {
+            content: '';
+            height: 2px;
+            width: 100%;
+            background-color: white; /* Visual line */
+            box-shadow: 0 0 2px rgba(0,0,0,0.3);
+        }
+
+        /* Guide Lines while dragging */
+        .guide-line-x {
+            position: absolute;
+            top: 0; bottom: 0; width: 1px;
+            background-color: #3b82f6;
+            border-left: 1px dashed white;
+            z-index: 25;
+            pointer-events: none;
+        }
+        .guide-line-y {
+            position: absolute;
+            left: 0; right: 0; height: 1px;
+            background-color: #3b82f6;
+            border-top: 1px dashed white;
+            z-index: 25;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 h-screen flex flex-col font-sans overflow-hidden">
+
+    <!-- Header -->
+    <header class="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shadow-sm z-20">
+        <div class="flex items-center gap-3">
+            <div class="p-2 bg-blue-600 rounded-lg text-white">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+            </div>
+            <h1 class="text-xl font-bold text-slate-800">Lot Grid Architect</h1>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="resetGridLines()" class="flex items-center gap-2 px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-md text-sm font-medium transition-colors">
+                Reset Lines
+            </button>
+            <button onclick="exportConfig()" class="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-md text-sm font-medium transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export JSON
+            </button>
+        </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden">
+        
+        <!-- Sidebar Controls -->
+        <aside class="w-80 bg-white border-r border-slate-200 flex flex-col z-10 shadow-lg shrink-0 overflow-hidden">
+            
+            <!-- Lot Switching & Naming -->
+            <div class="p-4 border-b border-slate-100 bg-slate-50">
+                <label class="block text-xs font-semibold text-slate-500 uppercase mb-2">Current Lot</label>
+                <select id="lot-selector" onchange="switchLot(this.value)" class="w-full mb-3 p-2 border border-slate-300 rounded-md text-sm shadow-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    <!-- Options populated by JS -->
+                </select>
+
+                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Export Key / Grid ID</label>
+                <div class="flex gap-2">
+                    <input type="text" id="lot-export-key" class="flex-1 p-2 border border-slate-300 rounded-md text-sm font-mono text-slate-600 focus:ring-2 focus:ring-blue-500 focus:outline-none" onchange="updateLotKey(this.value)">
+                </div>
+            </div>
+
+            <!-- Scrollable Settings -->
+            <div class="p-6 space-y-6 flex-1 overflow-y-auto">
+                
+                <!-- Dimensions -->
+                <div>
+                    <h3 class="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                        <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                        Grid Dimensions
+                    </h3>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">Rows</label>
+                            <div class="flex items-center gap-2">
+                                <input type="range" min="1" max="50" id="input-rows-range" class="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" oninput="updateGridDims('rows', this.value)">
+                                <input type="number" min="1" max="50" id="input-rows-num" class="w-16 border border-slate-300 rounded px-2 py-1 text-sm text-center font-mono" oninput="updateGridDims('rows', this.value)">
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">Columns</label>
+                            <div class="flex items-center gap-2">
+                                <input type="range" min="1" max="50" id="input-cols-range" class="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" oninput="updateGridDims('cols', this.value)">
+                                <input type="number" min="1" max="50" id="input-cols-num" class="w-16 border border-slate-300 rounded px-2 py-1 text-sm text-center font-mono" oninput="updateGridDims('cols', this.value)">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <hr class="border-slate-100">
+
+                <!-- Bulk Labeling Tool -->
+                <div class="bg-amber-50 border border-amber-100 rounded-lg p-3">
+                    <h3 class="font-bold text-amber-800 text-xs uppercase mb-2 flex items-center gap-1">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        Bulk Labeling
+                    </h3>
+                    
+                    <div class="space-y-2">
+                        <div>
+                            <label class="block text-[10px] font-bold text-amber-700 mb-1">TARGET</label>
+                            <div class="flex gap-2">
+                                <select id="bulk-type" class="flex-1 text-xs border border-amber-200 rounded p-1" onchange="updateBulkOptions()">
+                                    <option value="col">Column</option>
+                                    <option value="row">Row</option>
+                                </select>
+                                <select id="bulk-index" class="w-16 text-xs border border-amber-200 rounded p-1 font-mono">
+                                    <!-- Populated by JS -->
+                                </select>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-[10px] font-bold text-amber-700 mb-1">PATTERN</label>
+                            <input type="text" id="bulk-pattern" placeholder="e.g. RIV-2{rr}" class="w-full text-xs border border-amber-200 rounded p-1.5 focus:outline-none focus:border-amber-400">
+                            <p class="text-[9px] text-amber-600 mt-1">
+                                Use <code>{r}</code>/<code>{c}</code> for numbers, <code>{rr}</code> for 01, 02...
+                            </p>
+                        </div>
+
+                        <button onclick="applyBulkLabels()" class="w-full bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold py-1.5 rounded transition-colors">Apply Pattern</button>
+                    </div>
+                </div>
+
+                <hr class="border-slate-100">
+
+                <!-- Image Upload -->
+                <div>
+                    <h3 class="font-semibold text-slate-800 mb-2 text-sm">Background Image</h3>
+                    <label class="block w-full text-center px-4 py-2 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors">
+                        <span class="text-xs font-medium text-slate-600">Choose Image File</span>
+                        <input type="file" accept="image/*" class="hidden" onchange="handleImageUpload(this)">
+                    </label>
+                </div>
+
+                <!-- Editor Panel (Shown when selected) -->
+                <div id="editor-panel" class="hidden bg-blue-50 border border-blue-100 rounded-lg p-4 animate-fade-in">
+                    <h3 class="text-xs font-bold text-blue-800 uppercase mb-2">Selected Cell</h3>
+                    <div class="mb-2 text-xs text-blue-600 font-mono" id="selected-cell-coords">Row: -, Col: -</div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Label / ID</label>
+                    <input type="text" id="cell-label-input" placeholder="e.g. A1, 105..." class="w-full border border-blue-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" onkeyup="updateCellLabel(this.value)">
+                    <button onclick="clearCellLabel()" class="mt-2 text-xs text-red-500 hover:text-red-700 font-medium">Clear Label</button>
+                </div>
+
+            </div>
+        </aside>
+
+        <!-- Main Canvas Area -->
+        <main class="flex-1 bg-slate-200 overflow-auto flex items-center justify-center p-8 relative" id="main-viewport">
+            
+            <div class="relative pl-6 pt-6 bg-white shadow-2xl w-fit">
+                <!-- Top Ruler -->
+                <div id="col-ruler" class="absolute top-0 left-6 right-0 h-6 bg-slate-100 border-b border-slate-300 z-10 flex"></div>
+                <!-- Left Ruler -->
+                <div id="row-ruler" class="absolute left-0 top-6 bottom-0 w-6 bg-slate-100 border-r border-slate-300 z-10 flex flex-col"></div>
+
+                <!-- Image & Grid -->
+                <div class="relative select-none" id="image-container">
+                    <img id="lot-image" src="" alt="Lot Map" class="block" style="max-width: calc(100vw - 26rem); max-height: calc(100vh - 10rem); width: auto; height: auto;">
+                    <div id="grid-layer" class="grid-overlay"></div>
+                    <div id="guide-line" class="hidden"></div>
+                </div>
+            </div>
+
+        </main>
+
+    </div>
+
+    <!-- Export Modal -->
+    <div id="export-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center backdrop-blur-sm">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 class="font-bold text-lg">Export Configuration</h3>
+                <button onclick="document.getElementById('export-modal').classList.add('hidden')" class="text-slate-400 hover:text-slate-600">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="p-4 flex-1 overflow-hidden flex flex-col">
+                <p class="text-sm text-slate-600 mb-2">Copy this JSON object into your project codebase.</p>
+                <textarea id="export-textarea" class="w-full flex-1 border border-slate-300 rounded-lg p-3 font-mono text-xs bg-slate-50 resize-none focus:ring-2 focus:ring-blue-500 focus:outline-none" readonly></textarea>
+            </div>
+            <div class="p-4 border-t bg-slate-50 rounded-b-xl flex justify-end gap-2">
+                <button onclick="document.getElementById('export-modal').classList.add('hidden')" class="px-4 py-2 text-slate-600 font-medium text-sm hover:bg-slate-200 rounded-md">Close</button>
+                <button onclick="copyToClipboard()" class="px-4 py-2 bg-blue-600 text-white font-medium text-sm hover:bg-blue-700 rounded-md shadow-sm">Copy to Clipboard</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- Configuration & Utils ---
+        
+        const createPlaceholder = (name, color) => `data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600'%3E%3Crect width='100%25' height='100%25' fill='%23${color}'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif' font-size='48' fill='white'%3E${name}%3C/text%3E%3Cpath d='M50 50 L750 50 L750 550 L50 550 Z' fill='none' stroke='white' stroke-width='4' stroke-dasharray='10'/%3E%3C/svg%3E`;
+
+        const LOT_DEFINITIONS = [
+            { id: 'west_small_lot', name: 'West Small Lot', color: '475569' },
+            { id: 'east_small_lot', name: 'East Small Lot', color: '0d9488' },
+            { id: 'west_lot_exit', name: 'West Lot Exit', color: 'b91c1c' },
+            { id: 'west_big_lot', name: 'West Big Lot', color: '1d4ed8' },
+            { id: 'east_big_lot', name: 'East Big Lot', color: '0f766e' },
+            { id: 'east_garage_side', name: 'East Garage Side', color: '7e22ce' }
+        ];
+
+        const PLACEHOLDERS = {};
+        LOT_DEFINITIONS.forEach(def => {
+            PLACEHOLDERS[def.id] = createPlaceholder(def.name, def.color);
+        });
+
+        // --- Hardcoded Initial Data ---
+        const PRELOADED_CONFIG = {
+          "generatedAt": "2026-02-08T01:42:47.369Z",
+          "config": {
+            "west_small_lot": {
+              "rows": 6,
+              "cols": 37,
+              "rowBreaks": [
+                21.3,
+                35.3,
+                50,
+                64.6,
+                78.6
+              ],
+              "colBreaks": [
+                2.9,
+                5.4,
+                8.1,
+                10.8,
+                13.8,
+                16.4,
+                19,
+                21.6,
+                25.1,
+                27.4,
+                30.1,
+                32.7,
+                35.5,
+                38.1,
+                40.9,
+                43.7,
+                46.3,
+                49.4,
+                52.2,
+                54.9,
+                57.7,
+                59.6,
+                62.6,
+                65.4,
+                68.3,
+                70.2,
+                73.5,
+                76.2,
+                79.1,
+                82.4,
+                85.1,
+                87.9,
+                90.6,
+                93.9,
+                96.7,
+                99
+              ],
+              "labels": {
+                "4_0": "RIV-2XX",
+                "4_1": "RIV-2XX",
+                "4_2": "RIV-2XX",
+                "4_3": "RIV-2XX",
+                "4_4": "RIV-2XX",
+                "4_5": "RIV-2XX",
+                "4_6": "RIV-2XX",
+                "4_7": "RIV-2XX",
+                "4_8": "RIV-2XX",
+                "4_9": "RIV-2XX",
+                "4_10": "RIV-2XX",
+                "4_11": "RIV-2XX",
+                "4_12": "RIV-2XX",
+                "4_13": "RIV-2XX",
+                "4_14": "RIV-2XX",
+                "4_15": "RIV-2XX",
+                "4_16": "RIV-2XX",
+                "4_17": "RIV-2XX",
+                "4_18": "RIV-2XX",
+                "4_19": "RIV-2XX",
+                "4_20": "RIV-2XX",
+                "4_21": "RIV-2XX",
+                "4_22": "RIV-2XX",
+                "4_23": "RIV-2XX",
+                "4_24": "RIV-2XX",
+                "4_25": "RIV-2XX",
+                "4_26": "RIV-2XX",
+                "4_27": "RIV-2XX",
+                "4_28": "RIV-2XX",
+                "4_29": "RIV-2XX",
+                "4_30": "RIV-2XX",
+                "4_31": "RIV-2XX",
+                "4_32": "RIV-2XX",
+                "4_33": "RIV-2XX",
+                "4_34": "RIV-2XX",
+                "4_35": "RIV-2XX",
+                "4_36": "RIV-2XX",
+                "3_0": "RIV-3XX",
+                "3_1": "RIV-3XX",
+                "3_2": "RIV-3XX",
+                "3_3": "RIV-3XX",
+                "3_4": "RIV-3XX",
+                "3_5": "RIV-3XX",
+                "3_6": "RIV-3XX",
+                "3_7": "RIV-3XX",
+                "3_8": "RIV-3XX",
+                "3_9": "RIV-3XX",
+                "3_10": "RIV-3XX",
+                "3_11": "RIV-3XX",
+                "3_12": "RIV-3XX",
+                "3_13": "RIV-3XX",
+                "3_14": "RIV-3XX",
+                "3_15": "RIV-3XX",
+                "3_16": "RIV-3XX",
+                "3_17": "RIV-3XX",
+                "3_18": "RIV-3XX",
+                "3_19": "RIV-3XX",
+                "3_20": "RIV-3XX",
+                "3_21": "RIV-3XX",
+                "3_22": "RIV-3XX",
+                "3_23": "RIV-3XX",
+                "3_24": "RIV-3XX",
+                "3_25": "RIV-3XX",
+                "3_26": "RIV-3XX",
+                "3_27": "RIV-3XX",
+                "3_28": "RIV-3XX",
+                "3_29": "RIV-3XX",
+                "3_30": "RIV-3XX",
+                "3_31": "RIV-3XX",
+                "3_32": "RIV-3XX",
+                "3_33": "RIV-3XX",
+                "3_34": "RIV-3XX",
+                "3_35": "RIV-3XX",
+                "3_36": "RIV-3XX",
+                "2_0": "RIV-4XX",
+                "2_1": "RIV-4XX",
+                "2_2": "RIV-4XX",
+                "2_3": "RIV-4XX",
+                "2_4": "RIV-4XX",
+                "2_5": "RIV-4XX",
+                "2_6": "RIV-4XX",
+                "2_7": "RIV-4XX",
+                "2_8": "RIV-4XX",
+                "2_9": "RIV-4XX",
+                "2_10": "RIV-4XX",
+                "2_11": "RIV-4XX",
+                "2_12": "RIV-4XX",
+                "2_13": "RIV-4XX",
+                "2_14": "RIV-4XX",
+                "2_15": "RIV-4XX",
+                "2_16": "RIV-4XX",
+                "2_17": "RIV-4XX",
+                "2_18": "RIV-4XX",
+                "2_19": "RIV-4XX",
+                "2_20": "RIV-4XX",
+                "2_21": "RIV-4XX",
+                "2_22": "RIV-4XX",
+                "2_23": "RIV-4XX",
+                "2_24": "RIV-4XX",
+                "2_25": "RIV-4XX",
+                "2_26": "RIV-4XX",
+                "2_27": "RIV-4XX",
+                "2_28": "RIV-4XX",
+                "2_29": "RIV-4XX",
+                "2_30": "RIV-4XX",
+                "2_31": "RIV-4XX",
+                "2_32": "RIV-4XX",
+                "2_33": "RIV-4XX",
+                "2_34": "RIV-4XX",
+                "2_35": "RIV-4XX",
+                "2_36": "RIV-4XX",
+                "1_0": "RIV-5XX",
+                "1_1": "RIV-5XX",
+                "1_2": "RIV-5XX",
+                "1_3": "RIV-5XX",
+                "1_4": "RIV-5XX",
+                "1_5": "RIV-5XX",
+                "1_6": "RIV-5XX",
+                "1_7": "RIV-5XX",
+                "1_8": "RIV-5XX",
+                "1_9": "RIV-5XX",
+                "1_10": "RIV-5XX",
+                "1_11": "RIV-5XX",
+                "1_12": "RIV-5XX",
+                "1_13": "RIV-5XX",
+                "1_14": "RIV-5XX",
+                "1_15": "RIV-5XX",
+                "1_16": "RIV-5XX",
+                "1_17": "RIV-5XX",
+                "1_18": "RIV-5XX",
+                "1_19": "RIV-5XX",
+                "1_20": "RIV-5XX",
+                "1_21": "RIV-5XX",
+                "1_22": "RIV-5XX",
+                "1_23": "RIV-5XX",
+                "1_24": "RIV-5XX",
+                "1_25": "RIV-5XX",
+                "1_26": "RIV-5XX",
+                "1_27": "RIV-5XX",
+                "1_28": "RIV-5XX",
+                "1_29": "RIV-5XX",
+                "1_30": "RIV-5XX",
+                "1_31": "RIV-5XX",
+                "1_32": "RIV-5XX",
+                "1_33": "RIV-5XX",
+                "1_34": "RIV-5XX",
+                "1_35": "RIV-5XX",
+                "1_36": "RIV-5XX",
+                "0_0": "RIV-6XX",
+                "0_1": "RIV-6XX",
+                "0_2": "RIV-6XX",
+                "0_3": "RIV-6XX",
+                "0_4": "RIV-6XX",
+                "0_5": "RIV-6XX",
+                "0_6": "RIV-6XX",
+                "0_7": "RIV-6XX",
+                "0_8": "RIV-6XX",
+                "0_9": "RIV-6XX",
+                "0_10": "RIV-6XX",
+                "0_11": "RIV-6XX",
+                "0_12": "RIV-6XX",
+                "0_13": "RIV-6XX",
+                "0_14": "RIV-6XX",
+                "0_15": "RIV-6XX",
+                "0_16": "RIV-6XX",
+                "0_17": "RIV-6XX",
+                "0_18": "RIV-6XX",
+                "0_19": "RIV-6XX",
+                "0_20": "RIV-6XX",
+                "0_21": "RIV-6XX",
+                "0_22": "RIV-6XX",
+                "0_23": "RIV-6XX",
+                "0_24": "RIV-6XX",
+                "0_25": "RIV-6XX",
+                "0_26": "RIV-6XX",
+                "0_27": "RIV-6XX",
+                "0_28": "RIV-6XX",
+                "0_29": "RIV-6XX",
+                "0_30": "RIV-6XX",
+                "0_31": "RIV-6XX",
+                "0_32": "RIV-6XX",
+                "0_33": "RIV-6XX",
+                "0_34": "RIV-6XX",
+                "0_35": "RIV-6XX",
+                "0_36": "RIV-6XX"
+              }
+            },
+            "east_small_lot": {
+              "rows": 6,
+              "cols": 16,
+              "rowBreaks": [
+                20,
+                35,
+                49,
+                64,
+                79.3
+              ],
+              "colBreaks": [
+                6.25,
+                12.5,
+                18.5,
+                25,
+                31.2,
+                37.5,
+                43.7,
+                50,
+                56.2,
+                62.3,
+                68.2,
+                73.7,
+                81.2,
+                86.9,
+                92.8
+              ],
+              "labels": {
+                "0_0": "RIV-6XX",
+                "0_1": "RIV-6XX",
+                "0_2": "RIV-6XX",
+                "0_3": "RIV-6XX",
+                "0_4": "RIV-6XX",
+                "0_5": "RIV-6XX",
+                "0_6": "RIV-6XX",
+                "0_7": "RIV-6XX",
+                "0_8": "RIV-6XX",
+                "0_9": "RIV-6XX",
+                "0_10": "RIV-6XX",
+                "0_11": "RIV-6XX",
+                "0_12": "RIV-6XX",
+                "0_13": "RIV-6XX",
+                "0_14": "RIV-6XX",
+                "0_15": "RIV-6XX",
+                "1_0": "RIV-5XX",
+                "1_1": "RIV-5XX",
+                "1_2": "RIV-5XX",
+                "1_3": "RIV-5XX",
+                "1_4": "RIV-5XX",
+                "1_5": "RIV-5XX",
+                "1_6": "RIV-5XX",
+                "1_7": "RIV-5XX",
+                "1_8": "RIV-5XX",
+                "1_9": "RIV-5XX",
+                "1_10": "RIV-5XX",
+                "1_11": "RIV-5XX",
+                "1_12": "RIV-5XX",
+                "1_13": "RIV-5XX",
+                "1_14": "RIV-5XX",
+                "1_15": "RIV-5XX",
+                "2_0": "RIV-4XX",
+                "2_1": "RIV-4XX",
+                "2_2": "RIV-4XX",
+                "2_3": "RIV-4XX",
+                "2_4": "RIV-4XX",
+                "2_5": "RIV-4XX",
+                "2_6": "RIV-4XX",
+                "2_7": "RIV-4XX",
+                "2_8": "RIV-4XX",
+                "2_9": "RIV-4XX",
+                "2_10": "RIV-4XX",
+                "2_11": "RIV-4XX",
+                "2_12": "RIV-4XX",
+                "2_13": "RIV-4XX",
+                "2_14": "RIV-4XX",
+                "2_15": "RIV-4XX",
+                "3_0": "RIV-3XX",
+                "3_1": "RIV-3XX",
+                "3_2": "RIV-3XX",
+                "3_3": "RIV-3XX",
+                "3_4": "RIV-3XX",
+                "3_5": "RIV-3XX",
+                "3_6": "RIV-3XX",
+                "3_7": "RIV-3XX",
+                "3_8": "RIV-3XX",
+                "3_9": "RIV-3XX",
+                "3_10": "RIV-3XX",
+                "3_11": "RIV-3XX",
+                "3_12": "RIV-3XX",
+                "3_13": "RIV-3XX",
+                "3_14": "RIV-3XX",
+                "3_15": "RIV-3XX",
+                "4_0": "RIV-2XX",
+                "4_1": "RIV-2XX",
+                "4_2": "RIV-2XX",
+                "4_3": "RIV-2XX",
+                "4_4": "RIV-2XX",
+                "4_5": "RIV-2XX",
+                "4_6": "RIV-2XX",
+                "4_7": "RIV-2XX",
+                "4_8": "RIV-2XX",
+                "4_9": "RIV-2XX",
+                "4_10": "RIV-2XX",
+                "4_11": "RIV-2XX",
+                "4_12": "RIV-2XX",
+                "4_13": "RIV-2XX",
+                "4_14": "RIV-2XX",
+                "4_15": "RIV-2XX"
+              }
+            },
+            "west_lot_exit": {
+              "rows": 5,
+              "cols": 5,
+              "rowBreaks": [
+                20,
+                40,
+                60,
+                80
+              ],
+              "colBreaks": [
+                20,
+                40,
+                60,
+                80
+              ],
+              "labels": {}
+            },
+            "west_big_lot": {
+              "rows": 5,
+              "cols": 5,
+              "rowBreaks": [
+                20,
+                40,
+                60,
+                80
+              ],
+              "colBreaks": [
+                20,
+                40,
+                60,
+                80
+              ],
+              "labels": {}
+            },
+            "east_big_lot": {
+              "rows": 5,
+              "cols": 5,
+              "rowBreaks": [
+                20,
+                40,
+                60,
+                80
+              ],
+              "colBreaks": [
+                20,
+                40,
+                60,
+                80
+              ],
+              "labels": {}
+            },
+            "east_garage_side": {
+              "rows": 5,
+              "cols": 5,
+              "rowBreaks": [
+                20,
+                40,
+                60,
+                80
+              ],
+              "colBreaks": [
+                20,
+                40,
+                60,
+                80
+              ],
+              "labels": {}
+            }
+          }
+        };
+
+        function initBreaks(count) {
+            const breaks = [];
+            const step = 100 / count;
+            for (let i = 1; i < count; i++) {
+                breaks.push(i * step);
+            }
+            return breaks;
+        }
+
+        // --- State ---
+        const appState = {
+            currentLotId: 'west_small_lot',
+            selectedCell: null,
+            isDragging: false,
+            dragTarget: null,
+            lots: {}
+        };
+
+        // --- Initialization ---
+        function init() {
+            // Populate Lots in State
+            LOT_DEFINITIONS.forEach(def => {
+                const existing = PRELOADED_CONFIG.config[def.id];
+                if (existing) {
+                    appState.lots[def.id] = { ...existing, imageSrc: PLACEHOLDERS[def.id], exportKey: def.id };
+                } else {
+                    // Default config for new lots
+                    appState.lots[def.id] = {
+                        rows: 5, cols: 5,
+                        rowBreaks: initBreaks(5),
+                        colBreaks: initBreaks(5),
+                        labels: {},
+                        imageSrc: PLACEHOLDERS[def.id],
+                        exportKey: def.id // Allow user to rename this key
+                    };
+                }
+            });
+
+            // Populate Dropdown
+            const selector = document.getElementById('lot-selector');
+            LOT_DEFINITIONS.forEach(def => {
+                const opt = document.createElement('option');
+                opt.value = def.id;
+                opt.textContent = def.name;
+                selector.appendChild(opt);
+            });
+
+            // Listeners
+            window.addEventListener('mousemove', onDragMove);
+            window.addEventListener('mouseup', onDragEnd);
+            
+            // Start
+            switchLot('west_small_lot');
+        }
+
+        // --- Core Logic ---
+
+        function switchLot(lotId) {
+            deselectCell();
+            appState.currentLotId = lotId;
+            document.getElementById('lot-selector').value = lotId;
+            render();
+            updateBulkOptions(); // Refresh bulk dropdowns
+        }
+
+        function getCurrentData() {
+            return appState.lots[appState.currentLotId];
+        }
+
+        function updateLotKey(newKey) {
+            const data = getCurrentData();
+            if (newKey && newKey.trim() !== "") {
+                data.exportKey = newKey.trim();
+            }
+        }
+
+        function updateGridDims(dim, val) {
+            const data = getCurrentData();
+            val = parseInt(val);
+            if (isNaN(val) || val < 1) return;
+            
+            if (data[dim] !== val) {
+                data[dim] = val;
+                if (dim === 'rows') data.rowBreaks = initBreaks(val);
+                else data.colBreaks = initBreaks(val);
+            }
+            
+            if (dim === 'rows') {
+                document.getElementById('input-rows-range').value = val;
+                document.getElementById('input-rows-num').value = val;
+            } else {
+                document.getElementById('input-cols-range').value = val;
+                document.getElementById('input-cols-num').value = val;
+            }
+
+            renderGrid();
+            renderRulers();
+            updateBulkOptions();
+        }
+
+        function resetGridLines() {
+            const data = getCurrentData();
+            data.rowBreaks = initBreaks(data.rows);
+            data.colBreaks = initBreaks(data.cols);
+            renderGrid();
+            renderRulers();
+        }
+
+        // --- Bulk Labeling Logic ---
+
+        function updateBulkOptions() {
+            const data = getCurrentData();
+            const type = document.getElementById('bulk-type').value;
+            const selectIndex = document.getElementById('bulk-index');
+            selectIndex.innerHTML = '';
+
+            const count = type === 'col' ? data.cols : data.rows;
+            const label = type === 'col' ? 'Col' : 'Row';
+
+            for(let i=0; i<count; i++) {
+                const opt = document.createElement('option');
+                opt.value = i;
+                opt.textContent = `${label} ${i+1}`;
+                selectIndex.appendChild(opt);
+            }
+        }
+
+        function applyBulkLabels() {
+            const data = getCurrentData();
+            const type = document.getElementById('bulk-type').value; // 'col' or 'row'
+            const index = parseInt(document.getElementById('bulk-index').value); // 0-based
+            const pattern = document.getElementById('bulk-pattern').value;
+
+            if (!pattern) return;
+
+            // Iterate through the target
+            if (type === 'col') {
+                // Iterate all rows for this specific column
+                for(let r=0; r<data.rows; r++) {
+                    const key = `${r}_${index}`;
+                    const label = formatPattern(pattern, r+1, index+1);
+                    data.labels[key] = label;
+                }
+            } else {
+                // Iterate all cols for this specific row
+                for(let c=0; c<data.cols; c++) {
+                    const key = `${index}_${c}`;
+                    const label = formatPattern(pattern, index+1, c+1);
+                    data.labels[key] = label;
+                }
+            }
+
+            renderGrid();
+        }
+
+        function formatPattern(pattern, r, c) {
+            // Replacements: {r} -> 1, {c} -> 1, {rr} -> 01, {cc} -> 01
+            let str = pattern;
+            str = str.replace(/{rr}/g, r.toString().padStart(2, '0'));
+            str = str.replace(/{cc}/g, c.toString().padStart(2, '0'));
+            str = str.replace(/{r}/g, r.toString());
+            str = str.replace(/{c}/g, c.toString());
+            return str;
+        }
+
+        // --- Standard Image/File Logic ---
+
+        function handleImageUpload(input) {
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const data = getCurrentData();
+                    data.imageSrc = e.target.result;
+                    render();
+                }
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+
+        // --- Rendering ---
+
+        function render() {
+            const data = getCurrentData();
+            const elImage = document.getElementById('lot-image');
+            
+            elImage.src = data.imageSrc;
+            
+            document.getElementById('input-rows-range').value = data.rows;
+            document.getElementById('input-rows-num').value = data.rows;
+            document.getElementById('input-cols-range').value = data.cols;
+            document.getElementById('input-cols-num').value = data.cols;
+            
+            document.getElementById('lot-export-key').value = data.exportKey;
+
+            renderGrid();
+            renderRulers();
+        }
+
+        function getGridTemplateFromBreaks(breaks) {
+            let css = '';
+            let prev = 0;
+            breaks.forEach(b => {
+                css += `${b - prev}% `;
+                prev = b;
+            });
+            css += `${100 - prev}%`;
+            return css;
+        }
+
+        function renderGrid() {
+            const data = getCurrentData();
+            const elGrid = document.getElementById('grid-layer');
+            
+            elGrid.style.gridTemplateRows = getGridTemplateFromBreaks(data.rowBreaks);
+            elGrid.style.gridTemplateColumns = getGridTemplateFromBreaks(data.colBreaks);
+            
+            elGrid.innerHTML = '';
+
+            for (let r = 0; r < data.rows; r++) {
+                for (let c = 0; c < data.cols; c++) {
+                    const cell = document.createElement('div');
+                    const key = `${r}_${c}`;
+                    const label = data.labels[key];
+                    
+                    cell.className = 'grid-cell';
+                    if (label) {
+                        cell.classList.add('has-label');
+                        cell.textContent = label;
+                    }
+
+                    if (appState.selectedCell && appState.selectedCell.r === r && appState.selectedCell.c === c) {
+                        cell.classList.add('selected');
+                    }
+
+                    cell.onclick = () => selectCell(r, c);
+                    cell.title = `Row: ${r+1}, Col: ${c+1}` + (label ? ` (${label})` : '');
+                    elGrid.appendChild(cell);
+                }
+            }
+        }
+
+        function renderRulers() {
+            const data = getCurrentData();
+            const elColRuler = document.getElementById('col-ruler');
+            const elRowRuler = document.getElementById('row-ruler');
+            
+            elColRuler.innerHTML = '';
+            data.colBreaks.forEach((pos, idx) => {
+                const handle = document.createElement('div');
+                handle.className = 'ruler-handle col-handle';
+                handle.style.left = `${pos}%`;
+                handle.title = `Drag to resize Column ${idx + 1} / ${idx + 2}`;
+                handle.onmousedown = (e) => onDragStart(e, 'col', idx);
+                elColRuler.appendChild(handle);
+            });
+
+            elRowRuler.innerHTML = '';
+            data.rowBreaks.forEach((pos, idx) => {
+                const handle = document.createElement('div');
+                handle.className = 'ruler-handle row-handle';
+                handle.style.top = `${pos}%`;
+                handle.title = `Drag to resize Row ${idx + 1} / ${idx + 2}`;
+                handle.onmousedown = (e) => onDragStart(e, 'row', idx);
+                elRowRuler.appendChild(handle);
+            });
+        }
+
+        // --- Dragging Logic ---
+
+        function onDragStart(e, type, index) {
+            e.preventDefault();
+            appState.isDragging = true;
+            appState.dragTarget = { type, index };
+            
+            const elColRuler = document.getElementById('col-ruler');
+            const elRowRuler = document.getElementById('row-ruler');
+            const ruler = type === 'col' ? elColRuler : elRowRuler;
+            ruler.children[index].classList.add('active');
+            
+            const elGuideLine = document.getElementById('guide-line');
+            elGuideLine.className = type === 'col' ? 'guide-line-x' : 'guide-line-y';
+            elGuideLine.classList.remove('hidden');
+            
+            const data = getCurrentData();
+            const pos = type === 'col' ? data.colBreaks[index] : data.rowBreaks[index];
+            if (type === 'col') elGuideLine.style.left = pos + '%';
+            else elGuideLine.style.top = pos + '%';
+        }
+
+        function onDragMove(e) {
+            if (!appState.isDragging) return;
+
+            const data = getCurrentData();
+            const elImageContainer = document.getElementById('image-container');
+            const rect = elImageContainer.getBoundingClientRect();
+            const { type, index } = appState.dragTarget;
+            const breaks = type === 'col' ? data.colBreaks : data.rowBreaks;
+
+            let pct;
+            if (type === 'col') {
+                const rx = e.clientX - rect.left;
+                pct = (rx / rect.width) * 100;
+            } else {
+                const ry = e.clientY - rect.top;
+                pct = (ry / rect.height) * 100;
+            }
+
+            const prev = index > 0 ? breaks[index - 1] : 0;
+            const next = index < breaks.length - 1 ? breaks[index + 1] : 100;
+            const margin = 1;
+
+            if (pct < prev + margin) pct = prev + margin;
+            if (pct > next - margin) pct = next - margin;
+
+            breaks[index] = pct;
+
+            const elColRuler = document.getElementById('col-ruler');
+            const elRowRuler = document.getElementById('row-ruler');
+            const elGuideLine = document.getElementById('guide-line');
+
+            if (type === 'col') {
+                elColRuler.children[index].style.left = `${pct}%`;
+                elGuideLine.style.left = `${pct}%`;
+            } else {
+                elRowRuler.children[index].style.top = `${pct}%`;
+                elGuideLine.style.top = `${pct}%`;
+            }
+
+            renderGrid();
+        }
+
+        function onDragEnd() {
+            if (!appState.isDragging) return;
+            appState.isDragging = false;
+            appState.dragTarget = null;
+            document.getElementById('guide-line').classList.add('hidden');
+            renderRulers();
+        }
+
+        // --- Cell Interaction ---
+
+        function selectCell(r, c) {
+            appState.selectedCell = { r, c };
+            const data = getCurrentData();
+            const key = `${r}_${c}`;
+            
+            document.getElementById('editor-panel').classList.remove('hidden');
+            document.getElementById('selected-cell-coords').textContent = `Row: ${r+1}, Col: ${c+1}`;
+            document.getElementById('cell-label-input').value = data.labels[key] || '';
+            document.getElementById('cell-label-input').focus();
+
+            renderGrid();
+        }
+
+        function deselectCell() {
+            appState.selectedCell = null;
+            document.getElementById('editor-panel').classList.add('hidden');
+            renderGrid();
+        }
+
+        function updateCellLabel(val) {
+            if (!appState.selectedCell) return;
+            const { r, c } = appState.selectedCell;
+            const data = getCurrentData();
+            const key = `${r}_${c}`;
+
+            if (val && val.trim() !== '') {
+                data.labels[key] = val;
+            } else {
+                delete data.labels[key];
+            }
+            renderGrid();
+        }
+
+        function clearCellLabel() {
+            document.getElementById('cell-label-input').value = '';
+            updateCellLabel('');
+            document.getElementById('cell-label-input').focus();
+        }
+
+        // --- Export ---
+
+        function exportConfig() {
+            const configOut = {};
+            
+            // Re-construct the object using the user-defined keys
+            Object.values(appState.lots).forEach(lot => {
+                const key = lot.exportKey || 'unknown_lot';
+                configOut[key] = {
+                    rows: lot.rows,
+                    cols: lot.cols,
+                    rowBreaks: lot.rowBreaks,
+                    colBreaks: lot.colBreaks,
+                    labels: lot.labels
+                };
+            });
+
+            const exportData = {
+                generatedAt: new Date().toISOString(),
+                config: configOut
+            };
+
+            const jsonString = JSON.stringify(exportData, null, 2);
+            const exportString = `// Grid Configuration for Lots
+const LOT_GRID_CONFIG = ${jsonString};`;
+
+            document.getElementById('export-textarea').value = exportString;
+            document.getElementById('export-modal').classList.remove('hidden');
+        }
+
+        function copyToClipboard() {
+            const copyText = document.getElementById("export-textarea");
+            copyText.select();
+            copyText.setSelectionRange(0, 99999); 
+            document.execCommand('copy'); 
+            
+            const btn = document.querySelector('#export-modal button.bg-blue-600');
+            const originalText = btn.textContent;
+            btn.textContent = "Copied!";
+            btn.classList.add('bg-green-600');
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.classList.remove('bg-green-600');
+            }, 2000);
+        }
+
+        init();
+    </script>
+</body>
+</html>
