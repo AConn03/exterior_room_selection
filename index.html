@@ -31,11 +31,12 @@
             justify-content: center;
             cursor: pointer;
             overflow: hidden;
-            font-size: 0.75rem;
+            font-size: 0.6rem; /* Smaller font for long labels */
             color: white;
             font-weight: bold;
             text-shadow: 0 1px 2px black;
             user-select: none;
+            white-space: nowrap;
         }
 
         .grid-cell:hover {
@@ -122,9 +123,15 @@
             z-index: 25;
             pointer-events: none;
         }
+        
+        /* Select Mode Overrides */
+        body.mode-select .ruler-handle { display: none !important; }
+        body.mode-select .grid-cell { border-color: rgba(255,255,255,0.1); background-color: transparent; color: transparent; text-shadow: none; }
+        body.mode-select .grid-cell:hover { background-color: rgba(255,255,255,0.2); border-color: white; }
+        body.mode-select .grid-cell.selected { border-color: #3b82f6; background-color: rgba(59, 130, 246, 0.4); box-shadow: 0 0 15px rgba(59, 130, 246, 0.5); }
     </style>
 </head>
-<body class="bg-slate-100 text-slate-800 h-screen flex flex-col font-sans overflow-hidden">
+<body class="bg-slate-100 text-slate-800 h-screen flex flex-col font-sans overflow-hidden mode-edit">
 
     <!-- Header -->
     <header class="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shadow-sm z-20">
@@ -132,13 +139,20 @@
             <div class="p-2 bg-blue-600 rounded-lg text-white">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
             </div>
-            <h1 class="text-xl font-bold text-slate-800">Lot Grid Architect</h1>
+            <h1 class="text-xl font-bold text-slate-800 hidden sm:block">Lot Grid Architect</h1>
+            
+            <!-- Mode Switcher -->
+            <div class="flex bg-slate-100 rounded-lg p-1 ml-4">
+                <button onclick="setMode('edit')" id="mode-btn-edit" class="px-3 py-1 text-sm font-medium rounded-md bg-white text-slate-800 shadow-sm transition-all">Edit Mode</button>
+                <button onclick="setMode('select')" id="mode-btn-select" class="px-3 py-1 text-sm font-medium rounded-md text-slate-500 hover:text-slate-700 transition-all">Select Mode</button>
+            </div>
         </div>
+        
         <div class="flex gap-2">
-            <button onclick="resetGridLines()" class="flex items-center gap-2 px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-md text-sm font-medium transition-colors">
+            <button id="btn-reset" onclick="resetGridLines()" class="flex items-center gap-2 px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-md text-sm font-medium transition-colors">
                 Reset Lines
             </button>
-            <button onclick="exportConfig()" class="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-md text-sm font-medium transition-colors">
+            <button id="btn-export" onclick="exportConfig()" class="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-md text-sm font-medium transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 Export JSON
             </button>
@@ -157,95 +171,155 @@
                     <!-- Options populated by JS -->
                 </select>
 
-                <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Export Key / Grid ID</label>
-                <div class="flex gap-2">
-                    <input type="text" id="lot-export-key" class="flex-1 p-2 border border-slate-300 rounded-md text-sm font-mono text-slate-600 focus:ring-2 focus:ring-blue-500 focus:outline-none" onchange="updateLotKey(this.value)">
+                <div id="lot-key-container">
+                    <label class="block text-xs font-semibold text-slate-500 uppercase mb-1">Export Key / Grid ID</label>
+                    <div class="flex gap-2">
+                        <input type="text" id="lot-export-key" class="flex-1 p-2 border border-slate-300 rounded-md text-sm font-mono text-slate-600 focus:ring-2 focus:ring-blue-500 focus:outline-none" onchange="updateLotKey(this.value)">
+                    </div>
                 </div>
             </div>
 
             <!-- Scrollable Settings -->
-            <div class="p-6 space-y-6 flex-1 overflow-y-auto">
+            <div class="p-6 space-y-6 flex-1 overflow-y-auto relative">
                 
-                <!-- Dimensions -->
-                <div>
-                    <h3 class="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                        <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
-                        Grid Dimensions
-                    </h3>
+                <!-- SELECT MODE INFO PANEL -->
+                <div id="select-mode-panel" class="hidden h-full flex flex-col items-center justify-center text-center space-y-4 animate-fade-in">
+                    <div class="p-4 bg-blue-50 rounded-full text-blue-500 mb-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                    </div>
                     
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-1">Rows</label>
-                            <div class="flex items-center gap-2">
-                                <input type="range" min="1" max="50" id="input-rows-range" class="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" oninput="updateGridDims('rows', this.value)">
-                                <input type="number" min="1" max="50" id="input-rows-num" class="w-16 border border-slate-300 rounded px-2 py-1 text-sm text-center font-mono" oninput="updateGridDims('rows', this.value)">
-                            </div>
-                        </div>
+                    <div id="select-placeholder" class="text-slate-400">
+                        <h3 class="font-bold text-lg text-slate-600">No Selection</h3>
+                        <p class="text-sm">Click a space on the map<br>to view details.</p>
+                    </div>
 
-                        <div>
-                            <label class="block text-sm font-medium text-slate-700 mb-1">Columns</label>
-                            <div class="flex items-center gap-2">
-                                <input type="range" min="1" max="50" id="input-cols-range" class="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" oninput="updateGridDims('cols', this.value)">
-                                <input type="number" min="1" max="50" id="input-cols-num" class="w-16 border border-slate-300 rounded px-2 py-1 text-sm text-center font-mono" oninput="updateGridDims('cols', this.value)">
+                    <div id="select-details" class="hidden w-full space-y-4">
+                        <div class="bg-white border-2 border-blue-100 rounded-xl p-6 shadow-sm">
+                            <h2 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Space Number</h2>
+                            <div class="text-4xl font-black text-slate-800 tracking-tight" id="select-display-label">--</div>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-3 w-full">
+                            <div class="bg-slate-50 p-3 rounded-lg">
+                                <span class="block text-[10px] uppercase font-bold text-slate-400">Row</span>
+                                <span class="text-xl font-bold text-slate-700" id="select-display-row">-</span>
+                            </div>
+                            <div class="bg-slate-50 p-3 rounded-lg">
+                                <span class="block text-[10px] uppercase font-bold text-slate-400">Column</span>
+                                <span class="text-xl font-bold text-slate-700" id="select-display-col">-</span>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <hr class="border-slate-100">
+                <!-- EDIT MODE TOOLS -->
+                <div id="edit-mode-panel" class="space-y-6">
+                    <!-- Dimensions -->
+                    <div>
+                        <h3 class="font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                            <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
+                            Grid Dimensions
+                        </h3>
+                        
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">Rows</label>
+                                <div class="flex items-center gap-2">
+                                    <input type="range" min="1" max="50" id="input-rows-range" class="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" oninput="updateGridDims('rows', this.value)">
+                                    <input type="number" min="1" max="50" id="input-rows-num" class="w-16 border border-slate-300 rounded px-2 py-1 text-sm text-center font-mono" oninput="updateGridDims('rows', this.value)">
+                                </div>
+                            </div>
 
-                <!-- Bulk Labeling Tool -->
-                <div class="bg-amber-50 border border-amber-100 rounded-lg p-3">
-                    <h3 class="font-bold text-amber-800 text-xs uppercase mb-2 flex items-center gap-1">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                        Bulk Labeling
-                    </h3>
-                    
-                    <div class="space-y-2">
-                        <div>
-                            <label class="block text-[10px] font-bold text-amber-700 mb-1">TARGET</label>
-                            <div class="flex gap-2">
-                                <select id="bulk-type" class="flex-1 text-xs border border-amber-200 rounded p-1" onchange="updateBulkOptions()">
-                                    <option value="col">Column</option>
-                                    <option value="row">Row</option>
-                                </select>
-                                <select id="bulk-index" class="w-16 text-xs border border-amber-200 rounded p-1 font-mono">
-                                    <!-- Populated by JS -->
-                                </select>
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-1">Columns</label>
+                                <div class="flex items-center gap-2">
+                                    <input type="range" min="1" max="50" id="input-cols-range" class="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600" oninput="updateGridDims('cols', this.value)">
+                                    <input type="number" min="1" max="50" id="input-cols-num" class="w-16 border border-slate-300 rounded px-2 py-1 text-sm text-center font-mono" oninput="updateGridDims('cols', this.value)">
+                                </div>
                             </div>
                         </div>
+                    </div>
 
-                        <div>
-                            <label class="block text-[10px] font-bold text-amber-700 mb-1">PATTERN</label>
-                            <input type="text" id="bulk-pattern" placeholder="e.g. RIV-2{rr}" class="w-full text-xs border border-amber-200 rounded p-1.5 focus:outline-none focus:border-amber-400">
-                            <p class="text-[9px] text-amber-600 mt-1">
-                                Use <code>{r}</code>/<code>{c}</code> for numbers, <code>{rr}</code> for 01, 02...
+                    <hr class="border-slate-100">
+
+                    <!-- Bulk Labeling Tool -->
+                    <div class="bg-amber-50 border border-amber-100 rounded-lg p-3">
+                        <h3 class="font-bold text-amber-800 text-xs uppercase mb-2 flex items-center gap-1">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                            Bulk Labeling
+                        </h3>
+                        
+                        <div class="space-y-3">
+                            <div>
+                                <label class="block text-[10px] font-bold text-amber-700 mb-1">TARGET</label>
+                                <div class="flex gap-2">
+                                    <select id="bulk-type" class="flex-1 text-xs border border-amber-200 rounded p-1" onchange="updateBulkOptions()">
+                                        <option value="col">Column</option>
+                                        <option value="row">Row</option>
+                                    </select>
+                                    <select id="bulk-index" class="w-16 text-xs border border-amber-200 rounded p-1 font-mono">
+                                        <!-- Populated by JS -->
+                                    </select>
+                                </div>
+                            </div>
+
+                            <!-- Operation Mode -->
+                            <div>
+                                <label class="block text-[10px] font-bold text-amber-700 mb-1">OPERATION</label>
+                                <div class="flex gap-4 text-xs">
+                                    <label class="flex items-center gap-1 cursor-pointer">
+                                        <input type="radio" name="bulk-mode" value="overwrite" checked onchange="toggleBulkInputs()">
+                                        <span>Overwrite</span>
+                                    </label>
+                                    <label class="flex items-center gap-1 cursor-pointer">
+                                        <input type="radio" name="bulk-mode" value="replace" onchange="toggleBulkInputs()">
+                                        <span>Replace 'XX'</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div id="bulk-pattern-container">
+                                <label class="block text-[10px] font-bold text-amber-700 mb-1">PATTERN</label>
+                                <input type="text" id="bulk-pattern" placeholder="e.g. RIV-2XX" class="w-full text-xs border border-amber-200 rounded p-1.5 focus:outline-none focus:border-amber-400">
+                            </div>
+
+                            <!-- Counter Settings (Simplified) -->
+                            <div class="p-2 bg-white/50 rounded border border-amber-100">
+                                <div>
+                                    <label class="block text-[9px] font-bold text-amber-700 mb-1">START #</label>
+                                    <input type="number" id="bulk-start" value="1" class="w-full text-xs border border-amber-200 rounded p-1 text-center">
+                                </div>
+                            </div>
+
+                            <p class="text-[9px] text-amber-600 italic">
+                                Use <code>XX</code> for auto-numbers.<br>
+                                Columns use constant #, Rows increment.
                             </p>
+
+                            <button onclick="applyBulkLabels()" class="w-full bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold py-1.5 rounded transition-colors">Apply</button>
                         </div>
-
-                        <button onclick="applyBulkLabels()" class="w-full bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold py-1.5 rounded transition-colors">Apply Pattern</button>
                     </div>
-                </div>
 
-                <hr class="border-slate-100">
+                    <hr class="border-slate-100">
 
-                <!-- Image Upload -->
-                <div>
-                    <h3 class="font-semibold text-slate-800 mb-2 text-sm">Background Image</h3>
-                    <div class="text-xs text-slate-500 mb-2">Default images are loaded from GitHub. You can override them locally.</div>
-                    <label class="block w-full text-center px-4 py-2 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors">
-                        <span class="text-xs font-medium text-slate-600">Choose Local Image</span>
-                        <input type="file" accept="image/*" class="hidden" onchange="handleImageUpload(this)">
-                    </label>
-                </div>
+                    <!-- Image Upload -->
+                    <div>
+                        <h3 class="font-semibold text-slate-800 mb-2 text-sm">Background Image</h3>
+                        <div class="text-xs text-slate-500 mb-2">Default images are loaded from GitHub. You can override them locally.</div>
+                        <label class="block w-full text-center px-4 py-2 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors">
+                            <span class="text-xs font-medium text-slate-600">Choose Local Image</span>
+                            <input type="file" accept="image/*" class="hidden" onchange="handleImageUpload(this)">
+                        </label>
+                    </div>
 
-                <!-- Editor Panel (Shown when selected) -->
-                <div id="editor-panel" class="hidden bg-blue-50 border border-blue-100 rounded-lg p-4 animate-fade-in">
-                    <h3 class="text-xs font-bold text-blue-800 uppercase mb-2">Selected Cell</h3>
-                    <div class="mb-2 text-xs text-blue-600 font-mono" id="selected-cell-coords">Row: -, Col: -</div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Label / ID</label>
-                    <input type="text" id="cell-label-input" placeholder="e.g. A1, 105..." class="w-full border border-blue-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" onkeyup="updateCellLabel(this.value)">
-                    <button onclick="clearCellLabel()" class="mt-2 text-xs text-red-500 hover:text-red-700 font-medium">Clear Label</button>
+                    <!-- Editor Panel (Shown when selected) -->
+                    <div id="editor-panel" class="hidden bg-blue-50 border border-blue-100 rounded-lg p-4 animate-fade-in">
+                        <h3 class="text-xs font-bold text-blue-800 uppercase mb-2">Selected Cell</h3>
+                        <div class="mb-2 text-xs text-blue-600 font-mono" id="selected-cell-coords">Row: -, Col: -</div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Label / ID</label>
+                        <input type="text" id="cell-label-input" placeholder="e.g. A1, 105..." class="w-full border border-blue-200 rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" onkeyup="updateCellLabel(this.value)">
+                        <button onclick="clearCellLabel()" class="mt-2 text-xs text-red-500 hover:text-red-700 font-medium">Clear Label</button>
+                    </div>
                 </div>
 
             </div>
@@ -318,7 +392,7 @@
 
         // --- Hardcoded Initial Data ---
         const PRELOADED_CONFIG = {
-          "generatedAt": "2026-02-08T01:42:47.369Z",
+          "generatedAt": "2026-02-08T02:22:13.229Z",
           "config": {
             "west_small_lot": {
               "rows": 6,
@@ -369,191 +443,171 @@
                 99
               ],
               "labels": {
-                "4_0": "RIV-2XX",
-                "4_1": "RIV-2XX",
-                "4_2": "RIV-2XX",
-                "4_3": "RIV-2XX",
-                "4_4": "RIV-2XX",
-                "4_5": "RIV-2XX",
-                "4_6": "RIV-2XX",
-                "4_7": "RIV-2XX",
-                "4_8": "RIV-2XX",
-                "4_9": "RIV-2XX",
-                "4_10": "RIV-2XX",
-                "4_11": "RIV-2XX",
-                "4_12": "RIV-2XX",
-                "4_13": "RIV-2XX",
-                "4_14": "RIV-2XX",
-                "4_15": "RIV-2XX",
-                "4_16": "RIV-2XX",
-                "4_17": "RIV-2XX",
-                "4_18": "RIV-2XX",
-                "4_19": "RIV-2XX",
-                "4_20": "RIV-2XX",
-                "4_21": "RIV-2XX",
-                "4_22": "RIV-2XX",
-                "4_23": "RIV-2XX",
-                "4_24": "RIV-2XX",
-                "4_25": "RIV-2XX",
-                "4_26": "RIV-2XX",
-                "4_27": "RIV-2XX",
-                "4_28": "RIV-2XX",
-                "4_29": "RIV-2XX",
-                "4_30": "RIV-2XX",
-                "4_31": "RIV-2XX",
-                "4_32": "RIV-2XX",
-                "4_33": "RIV-2XX",
-                "4_34": "RIV-2XX",
-                "4_35": "RIV-2XX",
-                "4_36": "RIV-2XX",
-                "3_0": "RIV-3XX",
-                "3_1": "RIV-3XX",
-                "3_2": "RIV-3XX",
-                "3_3": "RIV-3XX",
-                "3_4": "RIV-3XX",
-                "3_5": "RIV-3XX",
-                "3_6": "RIV-3XX",
-                "3_7": "RIV-3XX",
-                "3_8": "RIV-3XX",
-                "3_9": "RIV-3XX",
-                "3_10": "RIV-3XX",
-                "3_11": "RIV-3XX",
-                "3_12": "RIV-3XX",
-                "3_13": "RIV-3XX",
-                "3_14": "RIV-3XX",
-                "3_15": "RIV-3XX",
-                "3_16": "RIV-3XX",
-                "3_17": "RIV-3XX",
-                "3_18": "RIV-3XX",
-                "3_19": "RIV-3XX",
-                "3_20": "RIV-3XX",
-                "3_21": "RIV-3XX",
-                "3_22": "RIV-3XX",
-                "3_23": "RIV-3XX",
-                "3_24": "RIV-3XX",
-                "3_25": "RIV-3XX",
-                "3_26": "RIV-3XX",
-                "3_27": "RIV-3XX",
-                "3_28": "RIV-3XX",
-                "3_29": "RIV-3XX",
-                "3_30": "RIV-3XX",
-                "3_31": "RIV-3XX",
-                "3_32": "RIV-3XX",
-                "3_33": "RIV-3XX",
-                "3_34": "RIV-3XX",
-                "3_35": "RIV-3XX",
-                "3_36": "RIV-3XX",
-                "2_0": "RIV-4XX",
-                "2_1": "RIV-4XX",
-                "2_2": "RIV-4XX",
-                "2_3": "RIV-4XX",
-                "2_4": "RIV-4XX",
-                "2_5": "RIV-4XX",
-                "2_6": "RIV-4XX",
-                "2_7": "RIV-4XX",
-                "2_8": "RIV-4XX",
-                "2_9": "RIV-4XX",
-                "2_10": "RIV-4XX",
-                "2_11": "RIV-4XX",
-                "2_12": "RIV-4XX",
-                "2_13": "RIV-4XX",
-                "2_14": "RIV-4XX",
-                "2_15": "RIV-4XX",
-                "2_16": "RIV-4XX",
-                "2_17": "RIV-4XX",
-                "2_18": "RIV-4XX",
-                "2_19": "RIV-4XX",
-                "2_20": "RIV-4XX",
-                "2_21": "RIV-4XX",
-                "2_22": "RIV-4XX",
-                "2_23": "RIV-4XX",
-                "2_24": "RIV-4XX",
-                "2_25": "RIV-4XX",
-                "2_26": "RIV-4XX",
-                "2_27": "RIV-4XX",
-                "2_28": "RIV-4XX",
-                "2_29": "RIV-4XX",
-                "2_30": "RIV-4XX",
-                "2_31": "RIV-4XX",
-                "2_32": "RIV-4XX",
-                "2_33": "RIV-4XX",
-                "2_34": "RIV-4XX",
-                "2_35": "RIV-4XX",
-                "2_36": "RIV-4XX",
-                "1_0": "RIV-5XX",
-                "1_1": "RIV-5XX",
-                "1_2": "RIV-5XX",
-                "1_3": "RIV-5XX",
-                "1_4": "RIV-5XX",
-                "1_5": "RIV-5XX",
-                "1_6": "RIV-5XX",
-                "1_7": "RIV-5XX",
-                "1_8": "RIV-5XX",
-                "1_9": "RIV-5XX",
-                "1_10": "RIV-5XX",
-                "1_11": "RIV-5XX",
-                "1_12": "RIV-5XX",
-                "1_13": "RIV-5XX",
-                "1_14": "RIV-5XX",
-                "1_15": "RIV-5XX",
-                "1_16": "RIV-5XX",
-                "1_17": "RIV-5XX",
-                "1_18": "RIV-5XX",
-                "1_19": "RIV-5XX",
-                "1_20": "RIV-5XX",
-                "1_21": "RIV-5XX",
-                "1_22": "RIV-5XX",
-                "1_23": "RIV-5XX",
-                "1_24": "RIV-5XX",
-                "1_25": "RIV-5XX",
-                "1_26": "RIV-5XX",
-                "1_27": "RIV-5XX",
-                "1_28": "RIV-5XX",
-                "1_29": "RIV-5XX",
-                "1_30": "RIV-5XX",
-                "1_31": "RIV-5XX",
-                "1_32": "RIV-5XX",
-                "1_33": "RIV-5XX",
-                "1_34": "RIV-5XX",
-                "1_35": "RIV-5XX",
-                "1_36": "RIV-5XX",
-                "0_0": "RIV-6XX",
-                "0_1": "RIV-6XX",
-                "0_2": "RIV-6XX",
-                "0_3": "RIV-6XX",
-                "0_4": "RIV-6XX",
-                "0_5": "RIV-6XX",
-                "0_6": "RIV-6XX",
-                "0_7": "RIV-6XX",
-                "0_8": "RIV-6XX",
-                "0_9": "RIV-6XX",
-                "0_10": "RIV-6XX",
-                "0_11": "RIV-6XX",
-                "0_12": "RIV-6XX",
-                "0_13": "RIV-6XX",
-                "0_14": "RIV-6XX",
-                "0_15": "RIV-6XX",
-                "0_16": "RIV-6XX",
-                "0_17": "RIV-6XX",
-                "0_18": "RIV-6XX",
-                "0_19": "RIV-6XX",
-                "0_20": "RIV-6XX",
-                "0_21": "RIV-6XX",
-                "0_22": "RIV-6XX",
-                "0_23": "RIV-6XX",
-                "0_24": "RIV-6XX",
-                "0_25": "RIV-6XX",
-                "0_26": "RIV-6XX",
-                "0_27": "RIV-6XX",
-                "0_28": "RIV-6XX",
-                "0_29": "RIV-6XX",
-                "0_30": "RIV-6XX",
-                "0_31": "RIV-6XX",
-                "0_32": "RIV-6XX",
-                "0_33": "RIV-6XX",
-                "0_34": "RIV-6XX",
-                "0_35": "RIV-6XX",
-                "0_36": "RIV-6XX"
+                "0_0": "RIV-602",
+                "0_1": "RIV-602",
+                "0_2": "RIV-602",
+                "0_3": "RIV-604",
+                "0_4": "RIV-604",
+                "0_5": "RIV-604",
+                "0_6": "RIV-606",
+                "0_7": "RIV-606",
+                "0_8": "RIV-606",
+                "0_9": "RIV-608",
+                "0_10": "RIV-608",
+                "0_11": "RIV-608",
+                "0_12": "RIV-610",
+                "0_13": "RIV-610",
+                "0_14": "RIV-610",
+                "0_15": "RIV-612",
+                "0_16": "RIV-612",
+                "0_17": "RIV-612",
+                "0_18": "RIV-614",
+                "0_19": "RIV-614",
+                "0_20": "RIV-614",
+                "0_22": "RIV-616",
+                "0_23": "RIV-616",
+                "0_24": "RIV-616",
+                "0_26": "RIV-618",
+                "0_27": "RIV-618",
+                "0_28": "RIV-618",
+                "0_29": "RIV-620",
+                "0_30": "RIV-620",
+                "0_31": "RIV-620",
+                "0_32": "RIV-622",
+                "0_33": "RIV-622",
+                "0_34": "RIV-622",
+                "1_0": "RIV-502",
+                "1_1": "RIV-502",
+                "1_2": "RIV-502",
+                "1_3": "RIV-504",
+                "1_4": "RIV-504",
+                "1_5": "RIV-504",
+                "1_6": "RIV-506",
+                "1_7": "RIV-506",
+                "1_8": "RIV-506",
+                "1_9": "RIV-508",
+                "1_10": "RIV-508",
+                "1_11": "RIV-508",
+                "1_12": "RIV-510",
+                "1_13": "RIV-510",
+                "1_14": "RIV-510",
+                "1_15": "RIV-512",
+                "1_16": "RIV-512",
+                "1_17": "RIV-512",
+                "1_18": "RIV-514",
+                "1_19": "RIV-514",
+                "1_20": "RIV-514",
+                "1_22": "RIV-516",
+                "1_23": "RIV-516",
+                "1_24": "RIV-516",
+                "1_26": "RIV-518",
+                "1_27": "RIV-518",
+                "1_28": "RIV-518",
+                "1_29": "RIV-520",
+                "1_30": "RIV-520",
+                "1_31": "RIV-520",
+                "1_32": "RIV-522",
+                "1_33": "RIV-522",
+                "1_34": "RIV-522",
+                "2_0": "RIV-402",
+                "2_1": "RIV-402",
+                "2_2": "RIV-402",
+                "2_3": "RIV-404",
+                "2_4": "RIV-404",
+                "2_5": "RIV-404",
+                "2_6": "RIV-406",
+                "2_7": "RIV-406",
+                "2_8": "RIV-406",
+                "2_9": "RIV-408",
+                "2_10": "RIV-408",
+                "2_11": "RIV-408",
+                "2_12": "RIV-410",
+                "2_13": "RIV-410",
+                "2_14": "RIV-410",
+                "2_15": "RIV-412",
+                "2_16": "RIV-412",
+                "2_17": "RIV-412",
+                "2_18": "RIV-414",
+                "2_19": "RIV-414",
+                "2_20": "RIV-414",
+                "2_22": "RIV-416",
+                "2_23": "RIV-416",
+                "2_24": "RIV-416",
+                "2_26": "RIV-418",
+                "2_27": "RIV-418",
+                "2_28": "RIV-418",
+                "2_29": "RIV-420",
+                "2_30": "RIV-420",
+                "2_31": "RIV-420",
+                "2_32": "RIV-422",
+                "2_33": "RIV-422",
+                "2_34": "RIV-422",
+                "3_0": "RIV-302",
+                "3_1": "RIV-302",
+                "3_2": "RIV-302",
+                "3_3": "RIV-304",
+                "3_4": "RIV-304",
+                "3_5": "RIV-304",
+                "3_6": "RIV-306",
+                "3_7": "RIV-306",
+                "3_8": "RIV-306",
+                "3_9": "RIV-308",
+                "3_10": "RIV-308",
+                "3_11": "RIV-308",
+                "3_12": "RIV-310",
+                "3_13": "RIV-310",
+                "3_14": "RIV-310",
+                "3_15": "RIV-312",
+                "3_16": "RIV-312",
+                "3_17": "RIV-312",
+                "3_18": "RIV-314",
+                "3_19": "RIV-314",
+                "3_20": "RIV-314",
+                "3_22": "RIV-316",
+                "3_23": "RIV-316",
+                "3_24": "RIV-316",
+                "3_26": "RIV-318",
+                "3_27": "RIV-318",
+                "3_28": "RIV-318",
+                "3_29": "RIV-320",
+                "3_30": "RIV-320",
+                "3_31": "RIV-320",
+                "3_32": "RIV-322",
+                "3_33": "RIV-322",
+                "3_34": "RIV-322",
+                "4_0": "RIV-202",
+                "4_1": "RIV-202",
+                "4_2": "RIV-202",
+                "4_3": "RIV-204",
+                "4_4": "RIV-204",
+                "4_5": "RIV-204",
+                "4_6": "RIV-206",
+                "4_7": "RIV-206",
+                "4_8": "RIV-206",
+                "4_9": "RIV-208",
+                "4_10": "RIV-208",
+                "4_11": "RIV-208",
+                "4_12": "RIV-210",
+                "4_13": "RIV-210",
+                "4_14": "RIV-210",
+                "4_15": "RIV-212",
+                "4_16": "RIV-212",
+                "4_17": "RIV-212",
+                "4_18": "RIV-214",
+                "4_19": "RIV-214",
+                "4_20": "RIV-214",
+                "4_22": "RIV-216",
+                "4_23": "RIV-216",
+                "4_24": "RIV-216",
+                "4_26": "RIV-218",
+                "4_27": "RIV-218",
+                "4_28": "RIV-218",
+                "4_29": "RIV-220",
+                "4_30": "RIV-220",
+                "4_31": "RIV-220",
+                "4_32": "RIV-222",
+                "4_33": "RIV-222",
+                "4_34": "RIV-222"
               }
             },
             "east_small_lot": {
@@ -667,21 +721,32 @@
               }
             },
             "west_lot_exit": {
-              "rows": 5,
-              "cols": 5,
+              "rows": 6,
+              "cols": 4,
               "rowBreaks": [
-                20,
-                40,
-                60,
-                80
+                21.27659574468085,
+                35.46099290780142,
+                51.41843971631206,
+                66.66666666666667,
+                80.49645390070921
               ],
               "colBreaks": [
-                20,
-                40,
-                60,
-                80
+                19.400630914826497,
+                35.80441640378549,
+                55.678233438485805
               ],
-              "labels": {}
+              "labels": {
+                "0_1": "RIV-601",
+                "1_1": "RIV-501",
+                "2_1": "RIV-401",
+                "3_1": "RIV-301",
+                "4_1": "RIV-201",
+                "0_2": "RIV-601",
+                "1_2": "RIV-501",
+                "2_2": "RIV-401",
+                "3_2": "RIV-301",
+                "4_2": "RIV-201"
+              }
             },
             "west_big_lot": {
               "rows": 5,
@@ -748,6 +813,7 @@
 
         // --- State ---
         const appState = {
+            mode: 'edit', // 'edit' or 'select'
             currentLotId: 'west_small_lot',
             selectedCell: null,
             isDragging: false,
@@ -774,7 +840,6 @@
                         exportKey: def.id 
                     };
                 } else {
-                    // Default config for new lots
                     appState.lots[def.id] = {
                         rows: 5, cols: 5,
                         rowBreaks: initBreaks(5),
@@ -801,16 +866,48 @@
             
             // Start
             switchLot('west_small_lot');
+            setMode('edit');
         }
 
         // --- Core Logic ---
+
+        function setMode(mode) {
+            appState.mode = mode;
+            document.body.className = "bg-slate-100 text-slate-800 h-screen flex flex-col font-sans overflow-hidden mode-" + mode;
+            
+            // Button Styles
+            const btnEdit = document.getElementById('mode-btn-edit');
+            const btnSelect = document.getElementById('mode-btn-select');
+            
+            if (mode === 'edit') {
+                btnEdit.className = "px-3 py-1 text-sm font-medium rounded-md bg-white text-slate-800 shadow-sm transition-all";
+                btnSelect.className = "px-3 py-1 text-sm font-medium rounded-md text-slate-500 hover:text-slate-700 transition-all";
+                
+                // Show Edit Panels, Hide Select Panels
+                document.getElementById('edit-mode-panel').classList.remove('hidden');
+                document.getElementById('select-mode-panel').classList.add('hidden');
+                document.getElementById('lot-key-container').classList.remove('hidden');
+                document.getElementById('btn-reset').classList.remove('hidden');
+            } else {
+                btnEdit.className = "px-3 py-1 text-sm font-medium rounded-md text-slate-500 hover:text-slate-700 transition-all";
+                btnSelect.className = "px-3 py-1 text-sm font-medium rounded-md bg-white text-slate-800 shadow-sm transition-all";
+                
+                // Show Select Panels, Hide Edit Panels
+                document.getElementById('edit-mode-panel').classList.add('hidden');
+                document.getElementById('select-mode-panel').classList.remove('hidden');
+                document.getElementById('lot-key-container').classList.add('hidden'); // Hide key editing in select mode
+                document.getElementById('btn-reset').classList.add('hidden');
+            }
+
+            deselectCell(); // Clear selection on mode change
+        }
 
         function switchLot(lotId) {
             deselectCell();
             appState.currentLotId = lotId;
             document.getElementById('lot-selector').value = lotId;
             render();
-            updateBulkOptions(); // Refresh bulk dropdowns
+            updateBulkOptions();
         }
 
         function getCurrentData() {
@@ -875,41 +972,70 @@
             }
         }
 
+        function toggleBulkInputs() {
+            const mode = document.querySelector('input[name="bulk-mode"]:checked').value;
+            const patternContainer = document.getElementById('bulk-pattern-container');
+            
+            if (mode === 'replace') {
+                patternContainer.classList.add('opacity-50', 'pointer-events-none');
+            } else {
+                patternContainer.classList.remove('opacity-50', 'pointer-events-none');
+            }
+        }
+
         function applyBulkLabels() {
             const data = getCurrentData();
             const type = document.getElementById('bulk-type').value; // 'col' or 'row'
             const index = parseInt(document.getElementById('bulk-index').value); // 0-based
             const pattern = document.getElementById('bulk-pattern').value;
+            const mode = document.querySelector('input[name="bulk-mode"]:checked').value;
+            const startNum = parseInt(document.getElementById('bulk-start').value) || 1;
 
-            if (!pattern) return;
+            if (mode === 'overwrite' && !pattern) return;
 
-            // Iterate through the target
-            if (type === 'col') {
-                // Iterate all rows for this specific column
-                for(let r=0; r<data.rows; r++) {
-                    const key = `${r}_${index}`;
-                    const label = formatPattern(pattern, r+1, index+1);
-                    data.labels[key] = label;
+            const targetLength = type === 'col' ? data.rows : data.cols;
+
+            for(let i=0; i<targetLength; i++) {
+                // If type is 'col', we want constant numbering (vertical stack same ID) -> seq = startNum
+                // If type is 'row', we want incrementing numbering (horizontal sequence) -> seq = i + startNum
+                const seq = (type === 'col') ? startNum : (i + startNum);
+                
+                let key, r, c;
+                if (type === 'col') {
+                    // iterating rows (r=i) for fixed col (c=index)
+                    r = i; c = index;
+                    key = `${r}_${c}`;
+                } else {
+                    // iterating cols (c=i) for fixed row (r=index)
+                    r = index; c = i;
+                    key = `${r}_${c}`;
                 }
-            } else {
-                // Iterate all cols for this specific row
-                for(let c=0; c<data.cols; c++) {
-                    const key = `${index}_${c}`;
-                    const label = formatPattern(pattern, index+1, c+1);
+
+                if (mode === 'overwrite') {
+                    // Full Rename
+                    const label = formatPattern(pattern, r+1, c+1, seq);
                     data.labels[key] = label;
+                } else {
+                    // Replace XX in existing
+                    const currentLabel = data.labels[key];
+                    if (currentLabel && currentLabel.includes('XX')) {
+                        const newLabel = currentLabel.replace(/XX/g, seq.toString().padStart(2, '0'));
+                        data.labels[key] = newLabel;
+                    }
                 }
             }
 
             renderGrid();
         }
 
-        function formatPattern(pattern, r, c) {
-            // Replacements: {r} -> 1, {c} -> 1, {rr} -> 01, {cc} -> 01
+        function formatPattern(pattern, r, c, seq) {
             let str = pattern;
             str = str.replace(/{rr}/g, r.toString().padStart(2, '0'));
             str = str.replace(/{cc}/g, c.toString().padStart(2, '0'));
             str = str.replace(/{r}/g, r.toString());
             str = str.replace(/{c}/g, c.toString());
+            // New XX support
+            str = str.replace(/XX/g, seq.toString().padStart(2, '0'));
             return str;
         }
 
@@ -998,6 +1124,9 @@
         }
 
         function renderRulers() {
+            // Rulers are hidden via CSS in select mode, but we can also optimize JS
+            if (appState.mode === 'select') return; 
+
             const data = getCurrentData();
             const elColRuler = document.getElementById('col-ruler');
             const elRowRuler = document.getElementById('row-ruler');
@@ -1026,6 +1155,7 @@
         // --- Dragging Logic ---
 
         function onDragStart(e, type, index) {
+            if (appState.mode === 'select') return; // Disable dragging in select mode
             e.preventDefault();
             appState.isDragging = true;
             appState.dragTarget = { type, index };
@@ -1101,18 +1231,36 @@
             appState.selectedCell = { r, c };
             const data = getCurrentData();
             const key = `${r}_${c}`;
-            
-            document.getElementById('editor-panel').classList.remove('hidden');
-            document.getElementById('selected-cell-coords').textContent = `Row: ${r+1}, Col: ${c+1}`;
-            document.getElementById('cell-label-input').value = data.labels[key] || '';
-            document.getElementById('cell-label-input').focus();
+            const label = data.labels[key] || '';
+
+            if (appState.mode === 'edit') {
+                // Edit Mode Logic
+                document.getElementById('editor-panel').classList.remove('hidden');
+                document.getElementById('selected-cell-coords').textContent = `Row: ${r+1}, Col: ${c+1}`;
+                document.getElementById('cell-label-input').value = label;
+                document.getElementById('cell-label-input').focus();
+            } else {
+                // Select Mode Logic (Show Info Panel)
+                document.getElementById('select-placeholder').classList.add('hidden');
+                document.getElementById('select-details').classList.remove('hidden');
+                
+                document.getElementById('select-display-label').textContent = label || '--';
+                document.getElementById('select-display-row').textContent = r + 1;
+                document.getElementById('select-display-col').textContent = c + 1;
+            }
 
             renderGrid();
         }
 
         function deselectCell() {
             appState.selectedCell = null;
-            document.getElementById('editor-panel').classList.add('hidden');
+            
+            if (appState.mode === 'edit') {
+                document.getElementById('editor-panel').classList.add('hidden');
+            } else {
+                document.getElementById('select-placeholder').classList.remove('hidden');
+                document.getElementById('select-details').classList.add('hidden');
+            }
             renderGrid();
         }
 
