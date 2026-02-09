@@ -232,8 +232,9 @@
                 <!-- Image Upload -->
                 <div>
                     <h3 class="font-semibold text-slate-800 mb-2 text-sm">Background Image</h3>
+                    <div class="text-xs text-slate-500 mb-2">Default images are loaded from GitHub. You can override them locally.</div>
                     <label class="block w-full text-center px-4 py-2 border-2 border-dashed border-slate-300 rounded-lg cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors">
-                        <span class="text-xs font-medium text-slate-600">Choose Image File</span>
+                        <span class="text-xs font-medium text-slate-600">Choose Local Image</span>
                         <input type="file" accept="image/*" class="hidden" onchange="handleImageUpload(this)">
                     </label>
                 </div>
@@ -261,6 +262,7 @@
 
                 <!-- Image & Grid -->
                 <div class="relative select-none" id="image-container">
+                    <!-- Image with Error Handling -->
                     <img id="lot-image" src="" alt="Lot Map" class="block" style="max-width: calc(100vw - 26rem); max-height: calc(100vh - 10rem); width: auto; height: auto;">
                     <div id="grid-layer" class="grid-overlay"></div>
                     <div id="guide-line" class="hidden"></div>
@@ -294,15 +296,19 @@
     <script>
         // --- Configuration & Utils ---
         
+        // Base URL for the GitHub repository
+        const GITHUB_REPO_URL = 'https://raw.githubusercontent.com/aconn03/exterior_room_selection/main/';
+
         const createPlaceholder = (name, color) => `data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='800' height='600'%3E%3Crect width='100%25' height='100%25' fill='%23${color}'/%3E%3Ctext x='50%25' y='50%25' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif' font-size='48' fill='white'%3E${name}%3C/text%3E%3Cpath d='M50 50 L750 50 L750 550 L50 550 Z' fill='none' stroke='white' stroke-width='4' stroke-dasharray='10'/%3E%3C/svg%3E`;
 
+        // Definition includes optional filename for GitHub resolution
         const LOT_DEFINITIONS = [
-            { id: 'west_small_lot', name: 'West Small Lot', color: '475569' },
-            { id: 'east_small_lot', name: 'East Small Lot', color: '0d9488' },
-            { id: 'west_lot_exit', name: 'West Lot Exit', color: 'b91c1c' },
-            { id: 'west_big_lot', name: 'West Big Lot', color: '1d4ed8' },
-            { id: 'east_big_lot', name: 'East Big Lot', color: '0f766e' },
-            { id: 'east_garage_side', name: 'East Garage Side', color: '7e22ce' }
+            { id: 'west_small_lot', name: 'West Small Lot', color: '475569', filename: 'west_small_lot.png' },
+            { id: 'east_small_lot', name: 'East Small Lot', color: '0d9488', filename: 'east_small_lot.png' },
+            { id: 'west_lot_exit', name: 'West Lot Exit', color: 'b91c1c' }, // No file on GH yet
+            { id: 'west_big_lot', name: 'West Big Lot', color: '1d4ed8' }, // No file on GH yet
+            { id: 'east_big_lot', name: 'East Big Lot', color: '0f766e' }, // No file on GH yet
+            { id: 'east_garage_side', name: 'East Garage Side', color: '7e22ce' } // No file on GH yet
         ];
 
         const PLACEHOLDERS = {};
@@ -754,8 +760,19 @@
             // Populate Lots in State
             LOT_DEFINITIONS.forEach(def => {
                 const existing = PRELOADED_CONFIG.config[def.id];
+                
+                // Determine initial image source (GitHub if available, else placeholder)
+                let initialImage = PLACEHOLDERS[def.id];
+                if (def.filename) {
+                    initialImage = GITHUB_REPO_URL + def.filename;
+                }
+
                 if (existing) {
-                    appState.lots[def.id] = { ...existing, imageSrc: PLACEHOLDERS[def.id], exportKey: def.id };
+                    appState.lots[def.id] = { 
+                        ...existing, 
+                        imageSrc: initialImage, 
+                        exportKey: def.id 
+                    };
                 } else {
                     // Default config for new lots
                     appState.lots[def.id] = {
@@ -763,8 +780,8 @@
                         rowBreaks: initBreaks(5),
                         colBreaks: initBreaks(5),
                         labels: {},
-                        imageSrc: PLACEHOLDERS[def.id],
-                        exportKey: def.id // Allow user to rename this key
+                        imageSrc: initialImage,
+                        exportKey: def.id
                     };
                 }
             });
@@ -916,6 +933,14 @@
             const data = getCurrentData();
             const elImage = document.getElementById('lot-image');
             
+            // Set up error handling before setting src to ensure fallback works
+            // If the GitHub image doesn't exist, this triggers and loads the placeholder
+            elImage.onerror = function() {
+                this.onerror = null; // Prevent infinite loops
+                this.src = PLACEHOLDERS[appState.currentLotId];
+                console.log(`Failed to load image for ${appState.currentLotId}, reverting to template.`);
+            };
+
             elImage.src = data.imageSrc;
             
             document.getElementById('input-rows-range').value = data.rows;
